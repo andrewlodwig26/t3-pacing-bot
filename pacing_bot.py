@@ -72,21 +72,26 @@ def get_luma_rsvps():
         # "params" are filters added to the URL — like search parameters.
         params = {
             "event_id": LUMA_EVENT_ID,
-            "limit": 100
+            "pagination_limit": 100
         }
         if cursor:
-            params["cursor"] = cursor
+            params["pagination_cursor"] = cursor
 
         # This is the actual API call — the moment your code talks to Luma.
         # requests.get() sends a GET request (meaning "give me data").
         response = requests.get(url, headers=headers, params=params)
 
         # Handle rate limiting (status 429 = "slow down").
-        # If we hit the limit, wait 60 seconds and try once more.
+        # Wait 90 seconds (Luma blocks for 1 min, so 90s gives margin)
+        # and try exactly ONCE more. If still blocked, stop completely
+        # so we don't keep extending the block window.
         if response.status_code == 429:
-            print("⏳ Rate limited by Luma — waiting 60 seconds...")
-            time.sleep(60)
+            print("⏳ Rate limited by Luma — waiting 90 seconds before ONE retry...")
+            time.sleep(90)
             response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 429:
+                print("❌ Still rate limited after retry. Stopping to avoid extending the block.")
+                return {}, 0
 
         # Check if the request worked. Status 200 = success.
         if response.status_code != 200:
@@ -114,7 +119,7 @@ def get_luma_rsvps():
                     daily_counts[day] += 1
 
         # Check if there are more pages
-        cursor = data.get("next_cursor")
+        cursor = data.get("pagination_cursor")
         if not cursor or len(entries) == 0:
             break
 
