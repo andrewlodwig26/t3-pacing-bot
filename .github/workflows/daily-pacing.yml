@@ -51,4 +51,6 @@ jobs:
           LUMA_EVENT_ID: ${{ secrets.LUMA_EVENT_ID }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python pacing_bot.py
