@@ -44,7 +44,7 @@ TRACKER_TAB = "Daily Tracker"
 # Event details — hardcoded for now, could move to a config file later
 EVENT_NAME = "T3 Live NYC"
 EVENT_DATE = date(2026, 5, 12)
-RSVP_GOAL = 150
+RSVP_GOAL = 188
 CAMPAIGN_START = date(2026, 4, 9)
 
 
