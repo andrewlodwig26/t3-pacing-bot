@@ -14,11 +14,14 @@ independently via GitHub Actions without Cowork.
 # "datetime" handles dates. "json" reads/writes JSON data.
 
 import requests
+import gspread
 import os
 import json
 import time
+import base64
 from datetime import datetime, date
 from collections import defaultdict
+from google.oauth2.service_account import Credentials
 
 
 # ── CONFIGURATION ────────────────────────────────────────────────────
@@ -32,6 +35,11 @@ LUMA_API_KEY = os.environ.get("LUMA_API_KEY", "")
 LUMA_EVENT_ID = os.environ.get("LUMA_EVENT_ID", "")
 HUBSPOT_API_KEY = os.environ.get("HUBSPOT_API_KEY", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
+GOOGLE_CREDS_B64 = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "")
+
+# Sheet details
+TRACKER_TAB = "Daily Tracker"
 
 # Event details — hardcoded for now, could move to a config file later
 EVENT_NAME = "T3 Live NYC"
@@ -266,6 +274,59 @@ def post_to_slack(message):
         return False
 
 
+# ── FUNCTION 6: WRITE RSVPS TO DAILY TRACKER ────────────────────────
+# Finds today's date in the Daily Tracker tab and writes the daily
+# RSVP count to Column E (New RSVPs). The sheet's formulas handle
+# cumulative totals, pacing, and % to goal automatically.
+
+def write_to_daily_tracker(daily_counts):
+    """Write today's new RSVP count to the Daily Tracker Google Sheet."""
+
+    if not GOOGLE_CREDS_B64 or not GOOGLE_SHEET_ID:
+        print("⏭️  No Google Sheets credentials — skipping tracker update")
+        return False
+
+    # Authenticate with Google (same service account as attendee sync)
+    creds_json = json.loads(base64.b64decode(GOOGLE_CREDS_B64))
+    credentials = Credentials.from_service_account_info(
+        creds_json,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(credentials)
+
+    # Open the sheet and select the Daily Tracker tab
+    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+    worksheet = spreadsheet.worksheet(TRACKER_TAB)
+
+    # Read all dates from Column A to find today's row
+    # Dates in the sheet are formatted like "4/30/26"
+    today = date.today()
+    today_short = f"{today.month}/{today.day}/{str(today.year)[2:]}"
+
+    dates = worksheet.col_values(1)  # Column A
+
+    target_row = None
+    for i, cell_date in enumerate(dates):
+        if cell_date.strip() == today_short:
+            target_row = i + 1  # gspread is 1-indexed
+            break
+
+    if not target_row:
+        print(f"⚠️  Could not find today's date ({today_short}) in Daily Tracker")
+        return False
+
+    # Get today's RSVP count from the daily_counts dictionary
+    # daily_counts uses "2026-04-30" format, so convert
+    today_iso = today.isoformat()  # "2026-04-30"
+    todays_rsvps = daily_counts.get(today_iso, 0)
+
+    # Write to Column E (New RSVPs) — column 5
+    worksheet.update_cell(target_row, 5, todays_rsvps)
+
+    print(f"✓ Daily Tracker: wrote {todays_rsvps} new RSVPs to row {target_row} (Column E)")
+    return True
+
+
 # ── MAIN: RUN EVERYTHING ────────────────────────────────────────────
 # This is the entry point — when you run the script, this is what
 # executes. It calls each function in order: get data → calculate → post.
@@ -282,10 +343,13 @@ if __name__ == "__main__":
     # Step 1: Get RSVP data from Luma
     daily_counts, total_rsvps = get_luma_rsvps()
 
-    # Step 2: Calculate pacing
+    # Step 2: Write today's count to the Daily Tracker sheet
+    write_to_daily_tracker(daily_counts)
+
+    # Step 3: Calculate pacing
     pacing = calculate_pacing(total_rsvps)
 
-    # Step 3: Build and send Slack message
+    # Step 4: Build and send Slack message
     message = build_slack_message(pacing, daily_counts)
     post_to_slack(message)
 
