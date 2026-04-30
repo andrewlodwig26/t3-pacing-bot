@@ -1,0 +1,54 @@
+# ── GitHub Actions Workflow ──────────────────────────────────────────
+# This file tells GitHub: "Run pacing_bot.py every weekday at 7am PT."
+#
+# YAML is a configuration format — like JSON but more readable.
+# Indentation matters in YAML (like Python). Use spaces, not tabs.
+#
+# This file lives at .github/workflows/daily-pacing.yml in your repo.
+# GitHub automatically detects any .yml file in that folder and
+# treats it as a workflow.
+
+name: Daily Pacing Update
+
+# "on" defines WHEN this workflow runs
+on:
+  schedule:
+    # Cron syntax: minute hour day-of-month month day-of-week
+    # "0 14 * * 1-5" = at 14:00 UTC (7:00 AM PT), Monday through Friday
+    # GitHub Actions uses UTC, so we convert: 7am PT = 2pm UTC
+    - cron: "0 14 * * 1-5"
+
+  # "workflow_dispatch" lets you run it manually from the GitHub UI
+  # (useful for testing — click "Run workflow" button)
+  workflow_dispatch:
+
+# "jobs" defines WHAT runs
+jobs:
+  post-pacing-update:
+    runs-on: ubuntu-latest  # GitHub spins up a fresh Linux machine
+
+    steps:
+      # Step 1: Get the code from your repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Step 3: Install the libraries the script needs
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Step 4: Run the bot
+      # "env" passes your secrets as environment variables
+      # ${{ secrets.NAME }} reads from GitHub Secrets (encrypted)
+      - name: Run pacing bot
+        env:
+          LUMA_API_KEY: ${{ secrets.LUMA_API_KEY }}
+          LUMA_EVENT_ID: ${{ secrets.LUMA_EVENT_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
+        run: python pacing_bot.py
