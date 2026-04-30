@@ -74,4 +74,4 @@ The included workflow runs every weekday at 7:00 AM PT. Add your API keys as rep
 
 ## Author
 
-Andrew Lodwig — Field Marketing Manager → aspiring RevOps builder. This is project #1 in a portfolio of AI-native operations tools.
+Andrew Lodwig — Field Marketing Manager → aspiring GTM engineer. This is project #1 in a portfolio of AI-native operations tools.
