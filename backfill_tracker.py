@@ -226,60 +226,55 @@ def backfill_tracker(daily_counts):
 
     print(f"\n  Found {len(data_rows)} date rows to process")
 
-    # ── OVERWRITE NEW RSVPS FOR EVERY ROW ──────────────────────────
-    # Use batch update for speed: collect all cell updates first
-    updates_new = []
-    updates_cumul = []
+    # ── BUILD ALL UPDATES IN MEMORY ───────────────────────────────
+    batch_updates = []  # for values (New RSVPs)
+    batch_formulas = []  # for formulas (Cumul, % to Goal)
     running_total = 0
 
     for idx, (row_num, iso_date) in enumerate(data_rows):
         rsvp_count = daily_counts.get(iso_date, 0)
 
-        # New RSVPs cell
+        # New RSVPs — raw value
         cell_new = gspread.utils.rowcol_to_a1(row_num, col_new)
-        updates_new.append({
+        batch_updates.append({
             "range": cell_new,
             "values": [[rsvp_count]]
         })
 
-        # Cumulative: use a formula referencing the cell above + this row
+        # Cumulative RSVPs — formula
         if col_cumul:
             cell_cumul_addr = gspread.utils.rowcol_to_a1(row_num, col_cumul)
             if idx == 0:
-                # First data row — cumulative = just this row's new RSVPs
-                updates_cumul.append({
+                batch_formulas.append({
                     "range": cell_cumul_addr,
                     "values": [[f"={cell_new}"]]
                 })
             else:
                 prev_cumul = gspread.utils.rowcol_to_a1(row_num - 1, col_cumul)
-                updates_cumul.append({
+                batch_formulas.append({
                     "range": cell_cumul_addr,
                     "values": [[f"={prev_cumul}+{cell_new}"]]
                 })
 
-        # % to Goal formula
+        # % to Goal — formula
         if col_pct and col_cumul:
             cell_cumul_ref = gspread.utils.rowcol_to_a1(row_num, col_cumul)
             cell_pct_addr = gspread.utils.rowcol_to_a1(row_num, col_pct)
-            worksheet.update_acell(cell_pct_addr, f"={cell_cumul_ref}/{RSVP_GOAL}")
-            time.sleep(0.2)
+            batch_formulas.append({
+                "range": cell_pct_addr,
+                "values": [[f"={cell_cumul_ref}/{RSVP_GOAL}"]]
+            })
 
         running_total += rsvp_count
         print(f"  ✓ {iso_date} → {rsvp_count} new (cumul: {running_total})")
 
-    # ── BATCH WRITE: New RSVPs ─────────────────────────────────────
-    print(f"\n  Writing {len(updates_new)} New RSVP values...")
-    for update in updates_new:
-        worksheet.update(update["range"], update["values"])
-        time.sleep(0.15)
+    # ── SINGLE BATCH WRITE: values ─────────────────────────────────
+    print(f"\n  Batch-writing {len(batch_updates)} New RSVP values...")
+    worksheet.batch_update(batch_updates, value_input_option="RAW")
 
-    # ── BATCH WRITE: Cumulative formulas ───────────────────────────
-    if col_cumul:
-        print(f"  Writing {len(updates_cumul)} cumulative formulas...")
-        for update in updates_cumul:
-            worksheet.update(update["range"], update["values"], raw=False)
-            time.sleep(0.15)
+    # ── SINGLE BATCH WRITE: formulas ───────────────────────────────
+    print(f"  Batch-writing {len(batch_formulas)} formulas (cumul + % to goal)...")
+    worksheet.batch_update(batch_formulas, value_input_option="USER_ENTERED")
 
     print(f"\n✓ Backfill complete: {len(data_rows)} rows updated, "
           f"running total = {running_total} RSVPs")
