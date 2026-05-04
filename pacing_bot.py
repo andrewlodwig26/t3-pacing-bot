@@ -169,32 +169,126 @@ def get_hubspot_stats():
     return data
 
 
+# ── HISTORICAL RSVP CURVE ──────────────────────────────────────────
+# Averaged from T3 Live SV (Mar 5, 2026) and T3 Live SF (Mar 31, 2026).
+# Key: days_before_event → expected cumulative % of final RSVPs.
+#
+# Both events showed the same macro pattern: slow early registration
+# with a massive surge in the final 5–7 days. A linear model would
+# report "BEHIND" for the entire first half of the campaign, which
+# is misleading. This curve replaces that with reality-based pacing.
+#
+# To update: add new event data to the averages below. More events
+# = more accurate baseline. The extract_curves.py script generates
+# the raw data from Luma CSVs.
+
+HISTORICAL_CURVE = {
+    # days_before_event: expected_cumulative_pct (average of SV + SF)
+    21: 1.9,
+    20: 5.1,
+    19: 4.0,
+    18: 4.7,
+    17: 6.5,
+    16: 7.7,
+    15: 8.8,
+    14: 13.6,
+    13: 18.1,
+    12: 21.6,
+    11: 23.4,
+    10: 25.9,
+    9: 27.2,
+    8: 29.9,
+    7: 34.3,
+    6: 38.0,
+    5: 47.4,
+    4: 52.4,
+    3: 58.3,
+    2: 65.6,
+    1: 74.8,
+    0: 96.8,
+}
+
+
+def get_expected_pct(days_remaining):
+    """Look up where we should be on the historical curve.
+
+    If days_remaining is between two data points, interpolate.
+    If it's beyond the curve (e.g. 25 days out), extrapolate from
+    the earliest data point — early registration is roughly linear
+    at a very low slope.
+    """
+    if days_remaining in HISTORICAL_CURVE:
+        return HISTORICAL_CURVE[days_remaining]
+
+    # Get sorted keys (descending — most days first)
+    keys = sorted(HISTORICAL_CURVE.keys(), reverse=True)
+
+    # Beyond the curve (very early in campaign)
+    if days_remaining > keys[0]:
+        # Extrapolate: assume the early-campaign rate holds
+        earliest_days = keys[0]
+        earliest_pct = HISTORICAL_CURVE[earliest_days]
+        # Rate per day in the earliest period
+        rate_per_day = earliest_pct / (earliest_days)
+        extra_days = days_remaining - earliest_days
+        return max(0, earliest_pct - (rate_per_day * extra_days))
+
+    # Interpolate between two known points
+    for i in range(len(keys) - 1):
+        if keys[i] >= days_remaining >= keys[i + 1]:
+            upper_days = keys[i]
+            lower_days = keys[i + 1]
+            upper_pct = HISTORICAL_CURVE[upper_days]
+            lower_pct = HISTORICAL_CURVE[lower_days]
+            # Linear interpolation between the two points
+            ratio = (upper_days - days_remaining) / (upper_days - lower_days)
+            return upper_pct + ratio * (lower_pct - upper_pct)
+
+    # Fallback (shouldn't reach here)
+    return HISTORICAL_CURVE[keys[-1]]
+
+
 # ── FUNCTION 3: CALCULATE PACING ────────────────────────────────────
-# Pure math — no APIs. Takes RSVP count and figures out if we're
-# on track, behind, or ahead.
+# Compares current RSVPs against the historical curve, not a linear
+# projection. Reports whether we're ahead, on track, or behind
+# relative to how SV and SF actually played out.
 
 def calculate_pacing(total_rsvps):
-    """Calculate pacing metrics against the RSVP goal."""
+    """Calculate pacing metrics using the historical RSVP curve."""
 
     today = date.today()
     days_elapsed = (today - CAMPAIGN_START).days
     days_remaining = (EVENT_DATE - today).days
-    rsvps_needed = RSVP_GOAL - total_rsvps
 
-    # Avoid division by zero
-    daily_pace = total_rsvps / max(days_elapsed, 1)
-    needed_pace = rsvps_needed / max(days_remaining, 1)
-
-    # Projected final count if current pace holds
-    projected = total_rsvps + (daily_pace * days_remaining)
-
-    # Pacing status
+    # What % of goal do we have?
     pct_to_goal = round((total_rsvps / RSVP_GOAL) * 100, 1)
 
-    if projected >= RSVP_GOAL:
+    # What % should we have based on the historical curve?
+    expected_pct = round(get_expected_pct(days_remaining), 1)
+    expected_rsvps = round(RSVP_GOAL * expected_pct / 100)
+
+    # How far ahead or behind the curve are we?
+    curve_delta = round(pct_to_goal - expected_pct, 1)
+
+    # Project final RSVPs using the curve: if we're at X% now and
+    # the curve says we should be at Y%, scale the goal accordingly.
+    # projection = (actual / expected) * goal
+    if expected_pct > 0:
+        projected = round(total_rsvps / (expected_pct / 100))
+    else:
+        # Too early to project meaningfully
+        projected = 0
+
+    # Also keep the simple daily pace for reference
+    daily_pace = total_rsvps / max(days_elapsed, 1)
+
+    # Pacing status — based on curve delta, not linear projection
+    if curve_delta >= 5:
+        status = "AHEAD 🟢"
+    elif curve_delta >= -5:
         status = "ON TRACK ✅"
-    elif projected >= RSVP_GOAL * 0.85:
-        status = "CLOSE ⚡"
+    elif curve_delta >= -15:
+        status = "SLIGHTLY BEHIND ⚡"
     else:
         status = "BEHIND ⚠️"
 
@@ -202,10 +296,12 @@ def calculate_pacing(total_rsvps):
         "total_rsvps": total_rsvps,
         "rsvp_goal": RSVP_GOAL,
         "pct_to_goal": pct_to_goal,
+        "expected_pct": expected_pct,
+        "expected_rsvps": expected_rsvps,
+        "curve_delta": curve_delta,
         "days_remaining": days_remaining,
         "daily_pace": round(daily_pace, 1),
-        "needed_pace": round(needed_pace, 1),
-        "projected": round(projected),
+        "projected": projected,
         "status": status
     }
 
@@ -220,29 +316,45 @@ def build_slack_message(pacing, daily_counts):
     today_str = datetime.now().strftime("%A, %B %d")
     event_date_str = EVENT_DATE.strftime("%B %d")
 
-    # Build the recommendation line based on gap
-    gap = pacing["needed_pace"] - pacing["daily_pace"]
-    if gap > 5:
-        rec = (f"🔴 Projected {pacing['projected']} at current pace "
-               f"({pacing['rsvp_goal'] - pacing['projected']} short). "
-               f"Need to add contacts or re-engage non-openers.")
-    elif gap > 2:
-        rec = (f"🟡 Slightly behind — need {pacing['needed_pace']}/day "
-               f"vs. current {pacing['daily_pace']}/day. One targeted push closes the gap.")
+    # Build the recommendation line based on curve delta
+    delta = pacing["curve_delta"]
+    if delta >= 5:
+        rec = (f"🟢 *Ahead of curve* — {pacing['total_rsvps']} RSVPs vs. "
+               f"{pacing['expected_rsvps']} expected at this point. "
+               f"Projected final: {pacing['projected']}. Stay the course.")
+    elif delta >= -5:
+        rec = (f"✅ *On track* — {pacing['total_rsvps']} RSVPs vs. "
+               f"{pacing['expected_rsvps']} expected. "
+               f"Projected final: {pacing['projected']}. "
+               f"Historically, the big surge comes in the last 5–7 days.")
+    elif delta >= -15:
+        rec = (f"⚡ *Slightly behind curve* — {pacing['total_rsvps']} RSVPs vs. "
+               f"{pacing['expected_rsvps']} expected ({abs(delta):.0f}pp behind). "
+               f"Projected final: {pacing['projected']}. "
+               f"Consider a targeted push or re-engage non-openers.")
     else:
-        rec = (f"🟢 Pacing well — projected {pacing['projected']} at current rate. "
-               f"Stay the course.")
+        rec = (f"⚠️ *Behind curve* — {pacing['total_rsvps']} RSVPs vs. "
+               f"{pacing['expected_rsvps']} expected ({abs(delta):.0f}pp behind). "
+               f"Projected final: {pacing['projected']}. "
+               f"Need to add contacts or activate a new channel.")
 
     message = (
         f"📊 *{EVENT_NAME} — Daily Pacing Update | {today_str}*\n\n"
         f"RSVPs: *{pacing['total_rsvps']}* / {pacing['rsvp_goal']} "
         f"({pacing['pct_to_goal']}% to goal)\n"
         f"Pacing: {pacing['status']} | "
-        f"Pace: {pacing['daily_pace']}/day (need {pacing['needed_pace']}/day)\n"
+        f"Curve expects {pacing['expected_pct']}% at {pacing['days_remaining']}d out "
+        f"(you're at {pacing['pct_to_goal']}%)\n"
         f"Days to Event: {pacing['days_remaining']} ({event_date_str})\n"
-        f"Projected Final: {pacing['projected']} RSVPs\n\n"
+        f"Projected Final: {pacing['projected']} RSVPs "
+        f"(based on historical curve)\n\n"
         f"📈 *Read:* {rec}\n\n"
-        f"📝 _Bot-generated. Reply in thread to discuss._"
+        f"📝 _Bot-generated · curve model v1 (SV + SF avg). "
+        f"Reply in thread to discuss._\n\n"
+        f"───\n"
+        f"_ℹ️ This bot uses a curve-based pacing model instead of a "
+        f"linear projection. Historical data from T3 Live SV and SF "
+        f"shows ~75% of RSVPs arrive in the final 7 days._"
     )
 
     return message
