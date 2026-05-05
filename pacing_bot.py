@@ -71,6 +71,7 @@ def get_luma_rsvps():
     # Count registrations per day
     daily_counts = defaultdict(int)  # like a dictionary that defaults to 0
     total_approved = 0
+    status_counts = defaultdict(int)  # diagnostic: track all approval_status values
 
     # Pagination: Luma returns results in pages. We keep fetching until
     # there are no more pages. "cursor" tells Luma where we left off.
@@ -118,6 +119,7 @@ def get_luma_rsvps():
 
         for guest in entries:
             status = guest.get("approval_status", "")
+            status_counts[status] += 1
             if status == "approved":
                 total_approved += 1
                 # Extract just the date portion from the timestamp
@@ -131,6 +133,9 @@ def get_luma_rsvps():
         if not cursor or len(entries) == 0:
             break
 
+    # Diagnostic: print all approval_status values seen
+    print(f"📊 Approval status breakdown: {dict(status_counts)}")
+    print(f"   Total entries across all pages: {sum(status_counts.values())}")
     print(f"✓ Luma: {total_approved} approved guests across {len(daily_counts)} days")
     return dict(daily_counts), total_approved
 
