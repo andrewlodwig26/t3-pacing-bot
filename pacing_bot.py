@@ -291,15 +291,14 @@ def calculate_pacing(total_rsvps):
     # Also keep the simple daily pace for reference
     daily_pace = total_rsvps / max(days_elapsed, 1)
 
-    # Pacing status — based on curve delta, not linear projection
-    if curve_delta >= 5:
-        status = "AHEAD 🟢"
-    elif curve_delta >= -5:
-        status = "ON TRACK ✅"
-    elif curve_delta >= -15:
-        status = "SLIGHTLY BEHIND ⚡"
+    # Pacing status — based on RSVP gap (expected minus actual)
+    rsvp_gap = expected_rsvps - total_rsvps
+    if rsvp_gap <= 20:
+        status = "ON PACE 🟢"
+    elif rsvp_gap <= 40:
+        status = "BEHIND 🟡"
     else:
-        status = "BEHIND ⚠️"
+        status = "AT RISK 🔴"
 
     return {
         "total_rsvps": total_rsvps,
@@ -325,32 +324,23 @@ def build_slack_message(pacing, daily_counts):
     today_str = datetime.now().strftime("%A, %B %d")
     event_date_str = EVENT_DATE.strftime("%B %d")
 
-    # Build the recommendation line based on curve delta
-    delta = pacing["curve_delta"]
+    # Build the recommendation line based on RSVP gap
     rsvp_gap = pacing["expected_rsvps"] - pacing["total_rsvps"]
-    if delta >= 5:
-        rec = (f"🟢 *Ahead of curve* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected at this point "
-               f"({pacing['total_rsvps'] - pacing['expected_rsvps']} ahead). "
-               f"Projected final: {pacing['projected']}. Stay the course.")
-    elif delta >= -5:
-        rec = (f"✅ *On track* — {pacing['total_rsvps']} RSVPs vs. "
+    if rsvp_gap <= 20:
+        rec = (f"🟢 *On pace* — {pacing['total_rsvps']} RSVPs vs. "
                f"{pacing['expected_rsvps']} expected. "
-               f"Projected final: {pacing['projected']}. "
-               f"Historically, the big surge comes in the last 5–7 days.")
-    elif delta >= -15:
-        rec = (f"⚡ *Slightly behind curve* — {pacing['total_rsvps']} RSVPs vs. "
+               f"Projected final: {pacing['projected']}.")
+    elif rsvp_gap <= 40:
+        rec = (f"🟡 *Behind* — {pacing['total_rsvps']} RSVPs vs. "
                f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
-               f"Projected final: {pacing['projected']}. "
-               f"Consider a targeted push or re-engage non-openers.")
+               f"Projected final: {pacing['projected']}.")
     else:
-        rec = (f"⚠️ *Behind curve* — {pacing['total_rsvps']} RSVPs vs. "
+        rec = (f"🔴 *At risk* — {pacing['total_rsvps']} RSVPs vs. "
                f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
-               f"Projected final: {pacing['projected']}. "
-               f"Need to add contacts or activate a new channel.")
+               f"Projected final: {pacing['projected']}.")
 
     message = (
-        f"📊 *{EVENT_NAME} — Daily Pacing Update | {today_str}*\n\n"
+        f"*{EVENT_NAME} — Daily Pacing Update | {today_str}*\n\n"
         f"RSVPs: *{pacing['total_rsvps']}* / {pacing['rsvp_goal']} "
         f"({pacing['pct_to_goal']}% to goal)\n"
         f"Pacing: {pacing['status']} | "
@@ -359,11 +349,11 @@ def build_slack_message(pacing, daily_counts):
         f"Days to Event: {pacing['days_remaining']} ({event_date_str})\n"
         f"Projected Final: {pacing['projected']} RSVPs "
         f"(based on historical curve)\n\n"
-        f"📈 *Read:* {rec}\n\n"
-        f"📝 _Bot-generated · curve model v1 (SV + SF avg). "
+        f"*Read:* {rec}\n\n"
+        f"_Bot-generated · curve model v1 (SV + SF avg). "
         f"Reply in thread to discuss._\n\n"
         f"───\n"
-        f"_ℹ️ This bot uses a curve-based pacing model instead of a "
+        f"_This bot uses a curve-based pacing model instead of a "
         f"linear projection. Historical data from T3 Live SV and SF "
         f"shows ~75% of RSVPs arrive in the final 7 days._"
     )
