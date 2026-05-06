@@ -75,7 +75,6 @@ def get_luma_rsvps():
     # Count registrations per day
     daily_counts = defaultdict(int)  # like a dictionary that defaults to 0
     total_approved = 0
-    status_counts = defaultdict(int)  # diagnostic: track all approval_status values
 
     # Pagination: Luma returns results in pages. We keep fetching until
     # there are no more pages. "cursor" tells Luma where we left off.
@@ -88,7 +87,7 @@ def get_luma_rsvps():
         # "params" are filters added to the URL — like search parameters.
         params = {
             "event_id": LUMA_EVENT_ID,
-            "pagination_limit": 25
+            "pagination_limit": 50
         }
         if cursor:
             params["pagination_cursor"] = cursor
@@ -120,17 +119,12 @@ def get_luma_rsvps():
         # and json decoding turns it into data you can work with.
         data = response.json()
 
-        # Diagnostic: log all top-level keys so we can find the real cursor field
-        non_entry_keys = {k: v for k, v in data.items() if k != "entries"}
-        print(f"   Response keys (excluding entries): {non_entry_keys}")
-
         # Luma wraps each guest in an "entries" list.
         # Each entry has fields like "approval_status" and "registered_at".
         entries = data.get("entries", [])
 
         for guest in entries:
             status = guest.get("approval_status", "")
-            status_counts[status] += 1
             if status == "approved":
                 total_approved += 1
                 # Extract just the date portion from the timestamp
@@ -141,15 +135,11 @@ def get_luma_rsvps():
 
         # Check if there are more pages
         cursor = data.get("next_cursor")
-        print(f"   Page fetched: {len(entries)} entries | has_more: {data.get('has_more')} | next_cursor: {cursor!r}")
         if not cursor or len(entries) == 0:
             break
     else:
         print(f"⚠️  Hit max pages limit ({MAX_PAGES}). Some guests may be missing.")
 
-    # Diagnostic: print all approval_status values seen
-    print(f"📊 Approval status breakdown: {dict(status_counts)}")
-    print(f"   Total entries across all pages: {sum(status_counts.values())}")
     print(f"✓ Luma: {total_approved} approved guests across {len(daily_counts)} days")
     return dict(daily_counts), total_approved
 
@@ -337,9 +327,11 @@ def build_slack_message(pacing, daily_counts):
 
     # Build the recommendation line based on curve delta
     delta = pacing["curve_delta"]
+    rsvp_gap = pacing["expected_rsvps"] - pacing["total_rsvps"]
     if delta >= 5:
         rec = (f"🟢 *Ahead of curve* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected at this point. "
+               f"{pacing['expected_rsvps']} expected at this point "
+               f"({pacing['total_rsvps'] - pacing['expected_rsvps']} ahead). "
                f"Projected final: {pacing['projected']}. Stay the course.")
     elif delta >= -5:
         rec = (f"✅ *On track* — {pacing['total_rsvps']} RSVPs vs. "
@@ -348,12 +340,12 @@ def build_slack_message(pacing, daily_counts):
                f"Historically, the big surge comes in the last 5–7 days.")
     elif delta >= -15:
         rec = (f"⚡ *Slightly behind curve* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected ({abs(delta):.0f}pp behind). "
+               f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
                f"Projected final: {pacing['projected']}. "
                f"Consider a targeted push or re-engage non-openers.")
     else:
         rec = (f"⚠️ *Behind curve* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected ({abs(delta):.0f}pp behind). "
+               f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
                f"Projected final: {pacing['projected']}. "
                f"Need to add contacts or activate a new channel.")
 
