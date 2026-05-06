@@ -55,8 +55,8 @@ jobs:
           LUMA_API_KEY: ${{ secrets.LUMA_API_KEY }}
           LUMA_EVENT_ID: ${{ secrets.LUMA_EVENT_ID }}
           # In dry-run mode, don't pass Slack or Sheets creds — bot prints instead of posting
-          SLACK_WEBHOOK_URL: ${{ inputs.dry_run == 'true' && '' || secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ inputs.dry_run && '' || secrets.SLACK_WEBHOOK_URL }}
           HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
-          GOOGLE_SHEET_ID: ${{ inputs.dry_run == 'true' && '' || secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_SHEETS_CREDENTIALS: ${{ inputs.dry_run == 'true' && '' || secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_SHEET_ID: ${{ inputs.dry_run && '' || secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ inputs.dry_run && '' || secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python pacing_bot.py
