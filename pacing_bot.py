@@ -38,6 +38,10 @@ SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
 GOOGLE_CREDS_B64 = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "")
 
+# Dry-run mode: pull data and log diagnostics, but don't post to Slack or write to Sheets.
+# Set DRY_RUN=true in the GitHub Actions workflow_dispatch input to enable.
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+
 # Sheet details
 TRACKER_TAB = "Daily Tracker"
 
@@ -373,6 +377,12 @@ def build_slack_message(pacing, daily_counts):
 def post_to_slack(message):
     """Send a message to Slack via incoming webhook."""
 
+    if DRY_RUN:
+        print("\n🧪 DRY RUN — Slack message NOT sent. Would have posted:\n")
+        print(message)
+        print()
+        return True
+
     if not SLACK_WEBHOOK_URL:
         print("\n📋 SLACK MESSAGE (no webhook configured — printing instead):\n")
         print(message)
@@ -399,6 +409,10 @@ def post_to_slack(message):
 
 def write_to_daily_tracker(daily_counts):
     """Write today's new RSVP count to the Daily Tracker Google Sheet."""
+
+    if DRY_RUN:
+        print("🧪 DRY RUN — skipping Google Sheet write")
+        return False
 
     if not GOOGLE_CREDS_B64 or not GOOGLE_SHEET_ID:
         print("⏭️  No Google Sheets credentials — skipping tracker update")
@@ -456,6 +470,8 @@ def write_to_daily_tracker(daily_counts):
 if __name__ == "__main__":
     print(f"🤖 Pacing Bot — {EVENT_NAME}")
     print(f"   Running at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    if DRY_RUN:
+        print("   🧪 DRY RUN MODE — no Slack posts, no Sheet writes")
     print("=" * 50)
 
     # Step 1: Get RSVP data from Luma
