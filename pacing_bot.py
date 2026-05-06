@@ -80,15 +80,18 @@ def get_luma_rsvps():
     # Pagination: Luma returns results in pages. We keep fetching until
     # there are no more pages. "cursor" tells Luma where we left off.
     cursor = None
+    page = 0
+    MAX_PAGES = 20  # Safety limit — 20 pages × 25 = 500 guests max. Prevents infinite loops.
 
-    while True:
+    while page < MAX_PAGES:
+        page += 1
         # "params" are filters added to the URL — like search parameters.
         params = {
             "event_id": LUMA_EVENT_ID,
             "pagination_limit": 25
         }
         if cursor:
-            params["next_cursor"] = cursor
+            params["pagination_cursor"] = cursor
 
         # This is the actual API call — the moment your code talks to Luma.
         # requests.get() sends a GET request (meaning "give me data").
@@ -141,6 +144,8 @@ def get_luma_rsvps():
         print(f"   Page fetched: {len(entries)} entries | has_more: {data.get('has_more')} | next_cursor: {cursor!r}")
         if not cursor or len(entries) == 0:
             break
+    else:
+        print(f"⚠️  Hit max pages limit ({MAX_PAGES}). Some guests may be missing.")
 
     # Diagnostic: print all approval_status values seen
     print(f"📊 Approval status breakdown: {dict(status_counts)}")
