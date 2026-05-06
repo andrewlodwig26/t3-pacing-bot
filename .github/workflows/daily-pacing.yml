@@ -21,6 +21,11 @@ on:
   # "workflow_dispatch" lets you run it manually from the GitHub UI
   # (useful for testing — click "Run workflow" button)
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — skip Slack post and Sheet write (diagnostic only)"
+        type: boolean
+        default: false
 
 # "jobs" defines WHAT runs
 jobs:
@@ -49,8 +54,9 @@ jobs:
         env:
           LUMA_API_KEY: ${{ secrets.LUMA_API_KEY }}
           LUMA_EVENT_ID: ${{ secrets.LUMA_EVENT_ID }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # In dry-run mode, don't pass Slack or Sheets creds — bot prints instead of posting
+          SLACK_WEBHOOK_URL: ${{ inputs.dry_run == 'true' && '' || secrets.SLACK_WEBHOOK_URL }}
           HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_SHEET_ID: ${{ inputs.dry_run == 'true' && '' || secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ inputs.dry_run == 'true' && '' || secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python pacing_bot.py
