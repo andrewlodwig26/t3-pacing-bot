@@ -81,7 +81,7 @@ def get_luma_rsvps():
         # "params" are filters added to the URL — like search parameters.
         params = {
             "event_id": LUMA_EVENT_ID,
-            "pagination_limit": 100
+            "pagination_limit": 25
         }
         if cursor:
             params["pagination_cursor"] = cursor
@@ -130,6 +130,7 @@ def get_luma_rsvps():
 
         # Check if there are more pages
         cursor = data.get("pagination_cursor")
+        print(f"   Page fetched: {len(entries)} entries | cursor: {cursor!r}")
         if not cursor or len(entries) == 0:
             break
 
