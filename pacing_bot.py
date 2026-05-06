@@ -88,7 +88,7 @@ def get_luma_rsvps():
             "pagination_limit": 25
         }
         if cursor:
-            params["pagination_cursor"] = cursor
+            params["next_cursor"] = cursor
 
         # This is the actual API call — the moment your code talks to Luma.
         # requests.get() sends a GET request (meaning "give me data").
@@ -137,8 +137,8 @@ def get_luma_rsvps():
                     daily_counts[day] += 1
 
         # Check if there are more pages
-        cursor = data.get("pagination_cursor")
-        print(f"   Page fetched: {len(entries)} entries | cursor: {cursor!r}")
+        cursor = data.get("next_cursor")
+        print(f"   Page fetched: {len(entries)} entries | has_more: {data.get('has_more')} | next_cursor: {cursor!r}")
         if not cursor or len(entries) == 0:
             break
 
