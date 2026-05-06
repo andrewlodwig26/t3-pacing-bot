@@ -117,6 +117,10 @@ def get_luma_rsvps():
         # and json decoding turns it into data you can work with.
         data = response.json()
 
+        # Diagnostic: log all top-level keys so we can find the real cursor field
+        non_entry_keys = {k: v for k, v in data.items() if k != "entries"}
+        print(f"   Response keys (excluding entries): {non_entry_keys}")
+
         # Luma wraps each guest in an "entries" list.
         # Each entry has fields like "approval_status" and "registered_at".
         entries = data.get("entries", [])
