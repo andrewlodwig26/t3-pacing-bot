@@ -291,11 +291,16 @@ def calculate_pacing(total_rsvps):
     # Also keep the simple daily pace for reference
     daily_pace = total_rsvps / max(days_elapsed, 1)
 
-    # Pacing status — based on RSVP gap (expected minus actual)
+    # Pacing status — based on % gap relative to expected RSVPs
+    # Scales naturally: 15% of 30 expected = 4 RSVPs, 15% of 150 = 22 RSVPs
     rsvp_gap = expected_rsvps - total_rsvps
-    if rsvp_gap <= 20:
+    if expected_rsvps > 0:
+        gap_pct = rsvp_gap / expected_rsvps
+    else:
+        gap_pct = 0
+    if gap_pct <= 0.15:
         status = "ON PACE 🟢"
-    elif rsvp_gap <= 40:
+    elif gap_pct <= 0.30:
         status = "BEHIND 🟡"
     else:
         status = "AT RISK 🔴"
@@ -324,19 +329,21 @@ def build_slack_message(pacing, daily_counts):
     today_str = datetime.now().strftime("%A, %B %d")
     event_date_str = EVENT_DATE.strftime("%B %d")
 
-    # Build the recommendation line based on RSVP gap
+    # Build the recommendation line — mirrors the % thresholds from calculate_pacing
     rsvp_gap = pacing["expected_rsvps"] - pacing["total_rsvps"]
-    if rsvp_gap <= 20:
+    expected = pacing["expected_rsvps"]
+    gap_pct = rsvp_gap / expected if expected > 0 else 0
+    if gap_pct <= 0.15:
         rec = (f"🟢 *On pace* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected. "
+               f"{expected} expected. "
                f"Projected final: {pacing['projected']}.")
-    elif rsvp_gap <= 40:
+    elif gap_pct <= 0.30:
         rec = (f"🟡 *Behind* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
+               f"{expected} expected ({rsvp_gap} RSVPs behind). "
                f"Projected final: {pacing['projected']}.")
     else:
         rec = (f"🔴 *At risk* — {pacing['total_rsvps']} RSVPs vs. "
-               f"{pacing['expected_rsvps']} expected ({rsvp_gap} RSVPs behind). "
+               f"{expected} expected ({rsvp_gap} RSVPs behind). "
                f"Projected final: {pacing['projected']}.")
 
     message = (
