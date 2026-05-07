@@ -19,7 +19,8 @@ import os
 import json
 import time
 import base64
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 from google.oauth2.service_account import Credentials
 
@@ -50,6 +51,11 @@ EVENT_NAME = "T3 Live NYC"
 EVENT_DATE = date(2026, 5, 12)
 RSVP_GOAL = 188
 CAMPAIGN_START = date(2026, 4, 9)
+
+# All date logic uses Pacific Time — GitHub Actions runs in UTC,
+# so without this, the bot thinks it's tomorrow when it runs late evening PT.
+PT = ZoneInfo("America/Los_Angeles")
+TODAY = datetime.now(PT).date()
 
 
 # ── FUNCTION 1: GET RSVPS FROM LUMA ─────────────────────────────────
@@ -265,7 +271,7 @@ def get_expected_pct(days_remaining):
 def calculate_pacing(total_rsvps):
     """Calculate pacing metrics using the historical RSVP curve."""
 
-    today = date.today()
+    today = TODAY
     days_elapsed = (today - CAMPAIGN_START).days
     days_remaining = (EVENT_DATE - today).days
 
@@ -326,7 +332,7 @@ def calculate_pacing(total_rsvps):
 def build_slack_message(pacing, daily_counts):
     """Format pacing data into a Slack message string."""
 
-    today_str = datetime.now().strftime("%A, %B %d")
+    today_str = datetime.now(PT).strftime("%A, %B %d")
     event_date_str = EVENT_DATE.strftime("%B %d")
 
     # Build the recommendation line — mirrors the % thresholds from calculate_pacing
@@ -430,7 +436,7 @@ def write_to_daily_tracker(daily_counts):
 
     # Read all dates from Column A to find today's row
     # Dates in the sheet are formatted like "4/30/26"
-    today = date.today()
+    today = TODAY
     today_short = f"{today.month}/{today.day}/{str(today.year)[2:]}"
 
     dates = worksheet.col_values(1)  # Column A
@@ -467,7 +473,7 @@ def write_to_daily_tracker(daily_counts):
 
 if __name__ == "__main__":
     print(f"🤖 Pacing Bot — {EVENT_NAME}")
-    print(f"   Running at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"   Running at {datetime.now(PT).strftime('%Y-%m-%d %H:%M')}")
     if DRY_RUN:
         print("   🧪 DRY RUN MODE — no Slack posts, no Sheet writes")
     print("=" * 50)
